@@ -78,99 +78,6 @@ ${body}
 let seed = 7;
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
-// ---- plants: everything organic is drawn in the tzula.ai cell language ----
-// A grid of 0/1 bits; each cell flips into view when growth reaches it, and leaves turn over in gusts.
-const R = () => rand();
-const CELL = 3.85;
-const PLANT_CSS = `.g { animation: grow .35s cubic-bezier(.3,0,.1,1) both; transform-box: fill-box; transform-origin: center; }
-@keyframes grow { from { opacity: 0; transform: scaleY(0); } }
-.f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
-.k { animation-name: back; transform: scaleY(0); }
-@keyframes front { 0%,38% { transform: scaleY(1); animation-timing-function: cubic-bezier(.7,0,.2,1); } 43%,77% { transform: scaleY(0); } 82%,100% { transform: scaleY(1); } }
-@keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`;
-
-function plantGrid(w, h, ox = 0, oy = 0) {
-  const cols = Math.floor((w - 2 * ox) / CELL), rows = Math.floor((h - 2 * oy) / CELL);
-  const cells = new Map(); // "c,r" -> { c, r, t, b, leaf }
-  const put = (c, r, t, b, leaf = false) => {
-    c = Math.round(c); r = Math.round(r);
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
-    const k = `${c},${r}`, cur = cells.get(k);
-    cells.set(k, { c, r, t: Math.min(t, cur?.t ?? t), b: Math.max(b, cur?.b ?? 0), leaf: leaf || (cur?.leaf ?? false) });
-  };
-  const render = () => {
-    const all = [...cells.values()];
-    const done = Math.max(0, ...all.map((g) => g.t)) + 0.6;
-    let out = "";
-    for (const { c, r, t, b, leaf } of all) {
-      const x = (ox + c * CELL + CELL / 2).toFixed(1), y = (oy + r * CELL + CELL * 0.82).toFixed(1);
-      const bit = R() < 0.5 ? 0 : 1, grow = `animation-delay:${t.toFixed(2)}s`;
-      if (!leaf) { out += `<text x="${x}" y="${y}" opacity="${b.toFixed(2)}" class="g" style="${grow}">${bit}</text>`; continue; }
-      // Gusts travel left to right once everything has grown.
-      const gust = `animation-duration:${(5 + R() * 1.2).toFixed(2)}s;animation-delay:${(done + c * 0.03 + Math.sin(r * 0.4) * 0.4).toFixed(2)}s`;
-      out += `<g opacity="${b.toFixed(2)}" class="g" style="${grow}"><text x="${x}" y="${y}" class="f" style="${gust}">${bit}</text><text x="${x}" y="${y}" class="k" style="${gust}">${1 - bit}</text></g>`;
-    }
-    return `<g font-family="${MONO}" font-size="${(CELL * 0.95).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>`;
-  };
-  return { cols, rows, put, render };
-}
-
-// A leaf: a small ellipse of leaf cells at (x, y), leaning toward `side`.
-function leaf(put, x, y, side, t, size = 1) {
-  for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++)
-    if ((a / (2.4 * size)) ** 2 + (b / (1.3 * size)) ** 2 <= 1) put(x + a, y + side * (b + 1) - a * 0.3 * side, t, 0.6 + R() * 0.15, true);
-}
-
-// Recursive growth: a stem random-walks from (x, y) along `ang`, forks into thinner children
-// that do the same, and ends in a leaf or a curling tendril. Timing follows growth, so the
-// plant visibly unfolds. `avoid(x, y)` keeps it off content; `hold` pulls the heading back
-// toward the stem's own direction so long runners stay on course.
-function grow(put, o) {
-  const { len, depth, speed = 50, bright = 0.55, curl = 0.09, hold = 0.03, avoid, bounds, branchP = 0.018, leafP = 0.02 } = o;
-  let { x, y, ang, t, thick = 1 } = o;
-  const home = ang, step = 0.3;
-  let s = 0, tries = 0;
-  while (s < len && tries < 400) {
-    ang += (R() - 0.5) * curl * 2 + (home - ang) * hold;
-    const nx = x + Math.cos(ang) * step, ny = y + Math.sin(ang) * step;
-    if ((avoid && avoid(nx, ny)) || (bounds && !bounds(nx, ny))) { ang += (R() < 0.5 ? -1 : 1) * 0.5; tries++; continue; }
-    tries = 0; x = nx; y = ny; s += step;
-    const u = s / len, tt = t + s / speed, rad = thick * (1 - 0.65 * u);
-    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++)
-      if (dx * dx + dy * dy <= (rad + 0.25) ** 2) put(x + dx, y + dy, tt, bright - 0.12 * Math.hypot(dx, dy));
-    if (depth > 0 && u > 0.08 && u < 0.85 && R() < branchP) {
-      grow(put, { ...o, x, y, t: tt, depth: depth - 1, thick: rad * 0.7, bright: bright * 0.92,
-        ang: ang + (R() < 0.5 ? -1 : 1) * (0.45 + R() * 0.7), len: (len - s) * (0.35 + R() * 0.4) });
-    }
-    if (u > 0.05 && R() < leafP) { const sd = R() < 0.5 ? -1 : 1; leaf(put, x + (R() - 0.5) * 2, y + sd * 1.5, sd, tt + 0.15, 0.6 + R() * 0.35); }
-  }
-  const tt = t + s / speed;
-  if (R() < 0.55) leaf(put, x + Math.cos(ang) * 2, y + Math.sin(ang) * 2, R() < 0.5 ? -1 : 1, tt + 0.1, 0.8 + R() * 0.3);
-  else {
-    // A tendril curls off the tip.
-    const dir = R() < 0.5 ? -1 : 1, turns = 1 + R() * 1.2;
-    for (let k = 0; k < 1; k += 0.03) {
-      const a = ang + dir * k * turns * Math.PI * 2, r = 4 * (1 - k);
-      put(x + Math.cos(ang) * k * 5 + Math.cos(a) * r - Math.cos(ang) * 4, y + Math.sin(ang) * k * 5 + Math.sin(a) * r - Math.sin(ang) * 4, tt + k * 0.4, bright * 0.7);
-    }
-  }
-}
-
-// ---- header: vines of bits root at the right edge and sprawl to the left ----
-function header() {
-  const w = 900, h = 248;
-  const { cols, rows, put, render } = plantGrid(w, h, 10, 8);
-  const bounds = (x, y) => y > 1 && y < rows - 2 && x > -4;
-  [9, 22, 36, 50].forEach((root, i) => {
-    grow(put, { x: cols - 1, y: root, ang: Math.PI + (R() - 0.5) * 0.3, len: cols * (0.85 + R() * 0.3), depth: 2,
-      t: [0, 0.4, 0.15, 0.55][i], speed: 58, thick: 0.8, curl: 0.1, hold: 0.03, bounds, branchP: 0.006, leafP: 0.008 });
-  });
-  return frame(w, h, `
-<defs><radialGradient id="v" cx="45%" cy="55%" r="70%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
-<rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
-${render()}`, PLANT_CSS);
-}
-
 // ---- stats: split-flap counters that spin up and land on the real value ----
 function flap(value, x, y, cw, ch, delay) {
   const digits = String(value).split("");
@@ -244,7 +151,6 @@ function gridCard() {
 }
 
 mkdirSync("tzula", { recursive: true });
-writeFileSync("tzula/header.svg", header());
 writeFileSync("tzula/stats.svg", statsCard());
 writeFileSync("tzula/field.svg", gridCard());
 
@@ -270,7 +176,7 @@ function combined(parts) {
 <rect x="0.5" y="0.5" width="${W - 1}" height="${y - 1}" rx="14" fill="none" stroke="${C.line}"/>
 </svg>`;
 }
-writeFileSync("tzula/profile.svg", combined([header(), statsCard(), gridCard()]));
+writeFileSync("tzula/profile.svg", combined([statsCard(), gridCard()]));
 // Browsers cache the profile images by URL, so stamp each one with a content hash.
 let readme = readFileSync("README.md", "utf8");
 for (const f of ["profile"]) {
