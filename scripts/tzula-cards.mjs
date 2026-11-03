@@ -80,42 +80,88 @@ const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---- header: spaced wordmark over a field of flipping bits ----
 function header() {
-  // The bonsai from tzula.ai, cell for cell: a grid of bits. Leaves turn over to their complement as gusts pass.
-  const tree = JSON.parse(readFileSync(new URL("./bonsai.json", import.meta.url), "utf8"));
-  // 毅力 (perseverance), brush strokes from Zhi Mang Xing (OFL), baked to paths so no font is needed.
-  const yili = JSON.parse(readFileSync(new URL("./yili.json", import.meta.url), "utf8"));
-  const w = 900, h = 330, cell = 6.9;
-  const cols = 39, rows = 43;
-  const ox = 110, oy = (h - rows * cell) / 2 - 2;
-  let out = "";
-  for (const [r, c, b, op, wph, wd] of tree) {
-    const x = (ox + c * cell + cell / 2).toFixed(1), y = (oy + r * cell + cell * 0.82).toFixed(1);
-    if (wd === undefined) {
-      out += `<text x="${x}" y="${y}" opacity="${op}">${b}</text>`;
-    } else {
-      const t = `animation-duration:${wd}s;animation-delay:${wph}s`;
-      out += `<g opacity="${op}"><text x="${x}" y="${y}" class="f" style="${t}">${b}</text><text x="${x}" y="${y}" class="k" style="${t}">${1 - b}</text></g>`;
+  // Vines of bits grow from the left edge; where they reach the right they become 毅力.
+  // Same cell language as the tzula.ai bonsai: a grid of 0/1, leaves turn over in gusts.
+  // yili-mask.json: per-cell ink coverage of 毅 and 力 (Zhi Mang Xing, OFL), 31x31 each, trimmed to the brush.
+  const mask = JSON.parse(readFileSync(new URL("./yili-mask.json", import.meta.url), "utf8"));
+  const R = () => rand();
+  const w = 900, h = 330, cell = 5.2, ox = 10, oy = 9;
+  const cols = Math.floor((w - 2 * ox) / cell), rows = Math.floor((h - 2 * oy) / cell);
+  const grid = new Map(); // "c,r" -> { c, r, t, b, leaf }
+  const put = (c, r, t, b, leaf = false) => {
+    c = Math.round(c); r = Math.round(r);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+    const k = `${c},${r}`, cur = grid.get(k);
+    grid.set(k, { c, r, t: Math.min(t, cur?.t ?? t), b: Math.max(b, cur?.b ?? 0), leaf: leaf || (cur?.leaf ?? false) });
+  };
+
+  // Calligraphy, stacked: 毅 over 力, at the right.
+  const ink = [];
+  for (const [g, gc, gr] of [[mask.yi, 126, 0], [mask.li, 126, 29]])
+    g.forEach((row, y) => row.forEach((v, x) => { if (v > 0.22) ink.push([gc + x, gr + y, v]); }));
+  // Each vine lands on the leftmost ink within a band of rows.
+  const entryAt = (r0, r1) => ink.filter(([, r]) => r >= r0 && r <= r1).reduce((a, b) => (b[0] < a[0] ? b : a));
+  const vines = [
+    { y0: 6, entry: entryAt(6, 9), start: 0.0, a: 3.5 },
+    { y0: 20, entry: entryAt(14, 18), start: 0.35, a: 5 },
+    { y0: 33, entry: entryAt(36, 44), start: 0.15, a: 4.5 },
+    { y0: 52, entry: entryAt(46, 52), start: 0.5, a: 3 },
+  ];
+  const speed = 42; // cells per second
+  const smooth = (u) => u * u * (3 - 2 * u);
+  const arrivals = [];
+  for (const v of vines) {
+    const [ex, ey] = v.entry, p = R() * 6, q = R() * 6;
+    let len = 0, px = 0, py = v.y0;
+    for (let x = 0; x <= ex; x += 0.25) {
+      const wander = v.y0 + v.a * Math.sin(x / 11 + p) + 2 * Math.sin(x / 4.3 + q);
+      const k = smooth(Math.max(0, (x - (ex - 34)) / 34));
+      const y = wander * (1 - k) + ey * k;
+      len += Math.hypot(x - px, y - py); px = x; py = y;
+      const t = v.start + len / speed, rad = x < ex * 0.35 ? 1 : 0.4;
+      for (let dy = -2; dy <= 2; dy++) if (Math.abs(dy) <= rad + 0.2) put(x, y + dy, t, 0.5 - 0.15 * Math.abs(dy));
+      // Tendrils curl off the stem.
+      if (R() < 0.004 && x > 6 && x < ex - 10) {
+        const dir = R() < 0.5 ? -1 : 1, turns = 1.2 + R();
+        for (let s = 0; s < 1; s += 0.02) {
+          const ang = s * turns * Math.PI * 2, rr = 7 * (1 - s);
+          put(x + s * 10 + rr * Math.sin(ang) * 0.6, y + dir * (3 + s * 6 - rr * Math.cos(ang) * 0.5), t + s * 0.5, 0.32);
+        }
+      }
+      // Leaves sit beside the stem.
+      if (R() < 0.014 && x < ex - 4) {
+        const side = R() < 0.5 ? -1 : 1, lx = x + 1 + R() * 2, ly = y + side * (2 + R());
+        for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++)
+          if ((a / 2.4) ** 2 + (b / 1.3) ** 2 <= 1) put(lx + a, ly + side * (b + 1) + a * 0.3 * side, t + 0.15, 0.6 + R() * 0.15, true);
+      }
     }
+    arrivals.push([ex, ey, v.start + len / speed]);
+  }
+  // The brush is drawn outward from where the vines arrive.
+  for (const [c, r, v] of ink) {
+    const t = Math.min(...arrivals.map(([ex, ey, ta]) => ta + Math.hypot(c - ex, r - ey) * 0.045));
+    put(c, r, t, 0.7 + 0.3 * v);
+  }
+
+  const cells = [...grid.values()];
+  const done = Math.max(...cells.map((g) => g.t)) + 0.6;
+  let out = "";
+  for (const { c, r, t, b, leaf } of cells) {
+    const x = (ox + c * cell + cell / 2).toFixed(1), y = (oy + r * cell + cell * 0.82).toFixed(1);
+    const bit = R() < 0.5 ? 0 : 1, grow = `animation-delay:${t.toFixed(2)}s`;
+    if (!leaf) { out += `<text x="${x}" y="${y}" opacity="${b.toFixed(2)}" class="g" style="${grow}">${bit}</text>`; continue; }
+    // Gusts travel left to right once the vines have grown.
+    const gust = `animation-duration:${(5 + R() * 1.2).toFixed(2)}s;animation-delay:${(done + c * 0.03 + Math.sin(r * 0.4) * 0.4).toFixed(2)}s`;
+    out += `<g opacity="${b.toFixed(2)}" class="g" style="${grow}"><text x="${x}" y="${y}" class="f" style="${gust}">${bit}</text><text x="${x}" y="${y}" class="k" style="${gust}">${1 - bit}</text></g>`;
   }
   return frame(w, h, `
-<defs><radialGradient id="v" cx="50%" cy="60%" r="60%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
+<defs><radialGradient id="v" cx="45%" cy="55%" r="70%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
 <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
-<g font-family="${MONO}" font-size="${(cell * 0.92).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>
-<filter id="brush" x="-10%" y="-10%" width="120%" height="120%">
-  <feTurbulence type="fractalNoise" baseFrequency="0.05 0.6" numOctaves="2" seed="4" result="grain"/>
-  <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.5 1.45" result="dry"/>
-  <feComposite in="SourceGraphic" in2="dry" operator="in" result="streaked"/>
-  <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="9" result="warp"/>
-  <feDisplacementMap in="streaked" in2="warp" scale="3"/>
-</filter>
-<g fill="#d6dbe0" opacity="0.85" filter="url(#brush)" class="ink">
-  <path transform="translate(520 28) scale(0.14)" d="${yili.yi}"/>
-  <path transform="translate(520 170) scale(0.14)" d="${yili.li}"/>
-</g>`,
-  `.f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
+<g font-family="${MONO}" font-size="${(cell * 0.95).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>`,
+  `.g { animation: grow .35s cubic-bezier(.3,0,.1,1) both; transform-box: fill-box; transform-origin: center; }
+@keyframes grow { from { opacity: 0; transform: scaleY(0); } }
+.f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
 .k { animation-name: back; transform: scaleY(0); }
-.ink { animation: ink 3s ease-out both; }
-@keyframes ink { from { opacity: 0; } to { opacity: .85; } }
 @keyframes front { 0%,38% { transform: scaleY(1); animation-timing-function: cubic-bezier(.7,0,.2,1); } 43%,77% { transform: scaleY(0); } 82%,100% { transform: scaleY(1); } }
 @keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`);
 }
