@@ -80,10 +80,8 @@ const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---- header: spaced wordmark over a field of flipping bits ----
 function header() {
-  // 毅力 is brushed first at the right; vines of bits then grow out of it like roots, sprawling to the left edge.
+  // Vines of bits root at the right edge and sprawl to the left.
   // Same cell language as the tzula.ai bonsai: a grid of 0/1, leaves turn over in gusts.
-  // yili-mask.json: per-cell ink coverage of 毅 and 力 (Zhi Mang Xing, OFL), 31x31 each, trimmed to the brush.
-  const mask = JSON.parse(readFileSync(new URL("./yili-mask.json", import.meta.url), "utf8"));
   const R = () => rand();
   const w = 900, h = 248, cell = 3.85, ox = 10, oy = 8;
   const cols = Math.floor((w - 2 * ox) / cell), rows = Math.floor((h - 2 * oy) / cell);
@@ -95,31 +93,18 @@ function header() {
     grid.set(k, { c, r, t: Math.min(t, cur?.t ?? t), b: Math.max(b, cur?.b ?? 0), leaf: leaf || (cur?.leaf ?? false) });
   };
 
-  // Calligraphy, stacked: 毅 over 力, at the right.
-  const ink = [];
-  for (const [g, gc, gr] of [[mask.yi, cols - 40, 0], [mask.li, cols - 40, 29]])
-    g.forEach((row, y) => row.forEach((v, x) => { if (v > 0.22) ink.push([gc + x, gr + y, v]); }));
-  // Brush the characters first: 毅 then 力, each stroked top to bottom with a little lean.
-  const inkT = (c, r) => (r >= 29 ? 1.1 : 0) + ((r % 29) * 0.034 + (c - (cols - 40)) * 0.008) * (0.9 + 0.2 * R());
-  const inkAt = new Map();
-  for (const [c, r, v] of ink) {
-    const t = inkT(c, r);
-    inkAt.set(`${c},${r}`, t);
-    put(c, r, t, 0.7 + 0.3 * v);
-  }
-  // Each vine roots in the leftmost ink within a band of rows, once the brush has passed there.
-  const rootAt = (r0, r1) => ink.filter(([, r]) => r >= r0 && r <= r1).reduce((a, b) => (b[0] < a[0] ? b : a));
+  // Vines root at the right edge and sprawl to the left.
   const vines = [
-    { y0: 6, root: rootAt(6, 9), a: 3.5 },
-    { y0: 20, root: rootAt(14, 18), a: 5 },
-    { y0: 33, root: rootAt(36, 44), a: 4.5 },
-    { y0: 52, root: rootAt(46, 52), a: 3 },
+    { y0: 6, root: [cols - 1, 9], start: 0.0, a: 3.5 },
+    { y0: 20, root: [cols - 1, 22], start: 0.4, a: 5 },
+    { y0: 33, root: [cols - 1, 36], start: 0.15, a: 4.5 },
+    { y0: 52, root: [cols - 1, 50], start: 0.55, a: 3 },
   ];
   const speed = 58; // cells per second
   const smooth = (u) => u * u * (3 - 2 * u);
   for (const v of vines) {
     const [ex, ey] = v.root, p = R() * 6, q = R() * 6;
-    const start = inkAt.get(`${ex},${ey}`) + 0.2;
+    const start = v.start;
     let len = 0, px = ex, py = ey;
     for (let x = ex; x >= 0; x -= 0.25) {
       const d = ex - x; // distance from the root
