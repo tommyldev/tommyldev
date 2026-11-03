@@ -265,9 +265,33 @@ mkdirSync("tzula", { recursive: true });
 writeFileSync("tzula/header.svg", header());
 writeFileSync("tzula/stats.svg", statsCard());
 writeFileSync("tzula/field.svg", gridCard());
+
+// One combined card: the three panels stacked inside a single frame, separated by hairlines.
+function combined(parts) {
+  const W = 900;
+  let y = 0, body = "", css = "";
+  parts.forEach((svg, i) => {
+    const h = Number(svg.match(/height="([\d.]+)"/)[1]);
+    css += svg.match(/<style>([\s\S]*?)<\/style>/)[1];
+    const inner = svg
+      .replace(/^[\s\S]*?<\/style>/, "")
+      .replace(/<rect x="0.5" y="0.5"[^>]*\/>/, "")
+      .replace(/<\/svg>\s*$/, "");
+    if (i) body += `<line x1="28" x2="${W - 28}" y1="${y}" y2="${y}" stroke="${C.line}"/>`;
+    body += `<svg x="0" y="${y}" width="${W}" height="${h}" overflow="hidden">${inner}</svg>`;
+    y += h - (i < parts.length - 1 ? 14 : 0);
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${y}" viewBox="0 0 ${W} ${y}">
+<style>${css}</style>
+<defs><clipPath id="card"><rect width="${W}" height="${y}" rx="14"/></clipPath></defs>
+<g clip-path="url(#card)"><rect width="${W}" height="${y}" fill="${C.bg}"/>${body}</g>
+<rect x="0.5" y="0.5" width="${W - 1}" height="${y - 1}" rx="14" fill="none" stroke="${C.line}"/>
+</svg>`;
+}
+writeFileSync("tzula/profile.svg", combined([header(), statsCard(), gridCard()]));
 // Browsers cache the profile images by URL, so stamp each one with a content hash.
 let readme = readFileSync("README.md", "utf8");
-for (const f of ["header", "stats", "field"]) {
+for (const f of ["profile"]) {
   const v = createHash("sha1").update(readFileSync(`tzula/${f}.svg`)).digest("hex").slice(0, 8);
   readme = readme.replace(new RegExp(`tzula/${f}\\.svg(\\?v=\\w+)?`), `tzula/${f}.svg?v=${v}`);
 }
