@@ -201,11 +201,6 @@ function statsCard() {
     ["COMMITS · 24H", stats.day, "LAST 24 HOURS"],
   ];
   const tw = (w - 40 - 3 * 14) / 4;
-  const { cols, rows, put, render } = plantGrid(w, h);
-  // Plants may wander anywhere except over a tile's contents.
-  const inner = tiles.map((_, t) => { const x = 20 + t * (tw + 14); return [(x + 8) / CELL, 28 / CELL, (x + tw - 8) / CELL, (h - 26) / CELL]; });
-  const avoid = (cx, cy) => inner.some(([a, b, c, d]) => cx > a && cx < c && cy > b && cy < d);
-  const bounds = (cx, cy) => cx > 1 && cy > 1 && cx < cols - 1 && cy < rows - 1;
   let body = "";
   tiles.forEach(([label, value, sub], t) => {
     const x = 20 + t * (tw + 14);
@@ -216,57 +211,36 @@ function statsCard() {
 <circle cx="${x + tw - 18}" cy="44" r="3" fill="${C.glow}" class="p" style="animation-delay:${t * 0.4}s"/>
 ${flap(value, x + 16, 72, cw, ch, 0.2 + t * 0.25)}
 <text x="${x + 16}" y="${h - 40}" font-family="${MONO}" font-size="10" letter-spacing="2" fill="${C.dim}">${esc(sub)}</text>`;
-    // Each tile is overgrown from its bottom corners: a climber up the left edge, a runner along the bottom.
-    const L = x / CELL, Rt = (x + tw) / CELL, B = (h - 22) / CELL;
-    grow(put, { x: L, y: B, ang: -Math.PI / 2, len: (h - 40) / CELL + 20, depth: 3, t: 0.6 + t * 0.35, speed: 45,
-      thick: 0.5, bright: 0.7, curl: 0.1, hold: 0.02, avoid, bounds, branchP: 0.012, leafP: 0.025 });
-    grow(put, { x: Rt, y: B + 1, ang: Math.PI, len: (Rt - L) * (0.4 + R() * 0.4), depth: 2, t: 1.3 + t * 0.35, speed: 45,
-      thick: 0.4, bright: 0.65, curl: 0.1, hold: 0.03, avoid, bounds, branchP: 0.012, leafP: 0.025 });
   });
-  return frame(w, h, `<g font-family="${MONO}" font-weight="600" fill="${C.hi}" font-size="30">${body}</g>
-${render()}`,
+  return frame(w, h, `<g font-family="${MONO}" font-weight="600" fill="${C.hi}" font-size="30">${body}</g>`,
     `.s { animation: spin 1.6s cubic-bezier(.2,.7,.2,1) both; }
 @keyframes spin { from { transform: translateY(0); } to { transform: translateY(var(--to)); } }
 .p { animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
-text { font-variant-numeric: tabular-nums; }
-${PLANT_CSS}`);
+text { font-variant-numeric: tabular-nums; }`);
 }
 
-// ---- contributions: a meadow, one stem per week, as tall as that week was busy ----
+// ---- contributions: the usual calendar grid, one square per day ----
 function gridCard() {
   const weeks = cc.contributionCalendar.weeks;
-  const x0 = 28, y0 = 44, w = 900, fieldH = 130, h = y0 + fieldH + 40;
-  const { put, render } = plantGrid(w, h);
-  const totals = weeks.map((wk) => wk.contributionDays.reduce((n, d) => n + d.contributionCount, 0));
-  const sorted = totals.filter(Boolean).sort((a, b) => a - b);
-  const max = Math.max(1, sorted[Math.floor(sorted.length * 0.95)] || 1);
-  const cw = (w - x0 * 2) / weeks.length, ground = (y0 + fieldH) / CELL, maxH = fieldH / CELL - 3;
-  let hits = "", months = "", lastM = -1;
-  // Soil: a faint line of bits along the bottom.
-  for (let c = x0 / CELL; c <= (w - x0) / CELL; c++) put(c, ground + 1 + (R() < 0.3 ? 1 : 0), 0.1 + c * 0.004, 0.18);
-  weeks.forEach((wk, wi) => {
-    const v = Math.min(1, totals[wi] / max) ** 0.6, base = (x0 + wi * cw + cw / 2) / CELL;
-    const tall = v * maxH, t0 = 0.3 + wi * 0.035;
-    // Each week grows a small plant, as tall and as branched as the week was busy.
-    if (tall >= 1) grow(put, { x: base, y: ground, ang: -Math.PI / 2 + (R() - 0.5) * 0.3, len: tall, depth: tall > 14 ? 2 : 1,
-      t: t0, speed: 26, thick: 0.1, bright: 0.45 + 0.4 * v, curl: 0.1, hold: 0.06, branchP: 0.025, leafP: 0.012,
-      bounds: (cx, cy) => cy > y0 / CELL && cy <= ground });
-    const first = wk.contributionDays[0];
-    const x = x0 + wi * cw;
-    hits += `<rect x="${x.toFixed(1)}" y="${y0}" width="${cw.toFixed(1)}" height="${fieldH}" fill="transparent"><title>Week of ${first.date}: ${totals[wi]}</title></rect>`;
-    const dt = new Date(first.date + "T00:00:00Z");
-    if (dt.getUTCMonth() !== lastM && dt.getUTCDate() <= 7) {
+  const x0 = 28, y0 = 48, w = 900, gap = 3;
+  const size = (w - x0 * 2 + gap) / weeks.length - gap, h = y0 + 7 * (size + gap) + 34;
+  const fill = { NONE: "#15181c", FIRST_QUARTILE: "#2b3138", SECOND_QUARTILE: "#56606b", THIRD_QUARTILE: "#9aa4ae", FOURTH_QUARTILE: "#dfe7ee" };
+  let cells = "", months = "", lastM = -1;
+  weeks.forEach((wk, wi) => wk.contributionDays.forEach((d) => {
+    const dt = new Date(d.date + "T00:00:00Z"), dow = dt.getUTCDay();
+    const x = (x0 + wi * (size + gap)).toFixed(1), y = (y0 + dow * (size + gap)).toFixed(1);
+    cells += `<rect x="${x}" y="${y}" width="${size.toFixed(1)}" height="${size.toFixed(1)}" rx="2.5" fill="${fill[d.contributionLevel] ?? fill.NONE}"><title>${d.date}: ${d.contributionCount}</title></rect>`;
+    if (dow === 0 && dt.getUTCMonth() !== lastM && dt.getUTCDate() <= 7) {
       lastM = dt.getUTCMonth();
-      months += `<text x="${x.toFixed(1)}" y="${h - 12}">${dt.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase()}</text>`;
+      months += `<text x="${x}" y="${h - 12}">${dt.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase()}</text>`;
     }
-  });
+  }));
   return frame(w, h, `
 <text x="${x0}" y="30" font-family="${MONO}" font-size="11" letter-spacing="3" fill="${C.mid}">CONTRIBUTIONS</text>
 <text x="${w - x0}" y="30" text-anchor="end" font-family="${MONO}" font-size="11" letter-spacing="2" fill="${C.dim}">${fmt(stats.contributions)} IN THE LAST YEAR</text>
-${render()}
-<g font-family="${MONO}" font-size="9" letter-spacing="2" fill="${C.dim}">${months}</g>
-<g>${hits}</g>`, PLANT_CSS);
+<g>${cells}</g>
+<g font-family="${MONO}" font-size="9" letter-spacing="2" fill="${C.dim}">${months}</g>`);
 }
 
 mkdirSync("tzula", { recursive: true });
