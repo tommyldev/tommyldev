@@ -101,16 +101,21 @@ function header() {
 <defs><radialGradient id="v" cx="50%" cy="60%" r="60%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
 <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
 <g font-family="${MONO}" font-size="${(cell * 0.92).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>
-<g fill="#d6dbe0" class="ink">
-  <path transform="translate(478 78) scale(0.15)" d="${yili.yi}"/>
-  <path transform="translate(628 78) scale(0.15)" d="${yili.li}"/>
-</g>
-<text x="628" y="250" text-anchor="middle" font-family="${MONO}" font-size="10" letter-spacing="6" fill="${C.dim}">PERSEVERANCE</text>
-<text x="${w - 22}" y="${h - 16}" text-anchor="end" font-family="${MONO}" font-size="10" letter-spacing="4" fill="${C.mid}">@${esc(login.toUpperCase())}  ·  SINCE ${stats.since}</text>`,
+<filter id="brush" x="-10%" y="-10%" width="120%" height="120%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.05 0.6" numOctaves="2" seed="4" result="grain"/>
+  <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.5 1.45" result="dry"/>
+  <feComposite in="SourceGraphic" in2="dry" operator="in" result="streaked"/>
+  <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="9" result="warp"/>
+  <feDisplacementMap in="streaked" in2="warp" scale="3"/>
+</filter>
+<g fill="#d6dbe0" opacity="0.85" filter="url(#brush)" class="ink">
+  <path transform="translate(520 28) scale(0.14)" d="${yili.yi}"/>
+  <path transform="translate(520 170) scale(0.14)" d="${yili.li}"/>
+</g>`,
   `.f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
 .k { animation-name: back; transform: scaleY(0); }
 .ink { animation: ink 3s ease-out both; }
-@keyframes ink { from { opacity: 0; } to { opacity: .92; } }
+@keyframes ink { from { opacity: 0; } to { opacity: .85; } }
 @keyframes front { 0%,38% { transform: scaleY(1); animation-timing-function: cubic-bezier(.7,0,.2,1); } 43%,77% { transform: scaleY(0); } 82%,100% { transform: scaleY(1); } }
 @keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`);
 }
