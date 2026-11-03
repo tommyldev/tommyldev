@@ -1,3 +1,3 @@
 <p align="center">
-  <img src="tzula/profile.svg?v=8c740d62" alt="Tommy on GitHub" width="100%">
+  <img src="tzula/profile.svg?v=9f2bc363" alt="Tommy on GitHub" width="100%">
 </p>
