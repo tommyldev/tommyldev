@@ -78,81 +78,94 @@ ${body}
 let seed = 7;
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
-// ---- header: spaced wordmark over a field of flipping bits ----
-function header() {
-  // Vines of bits root at the right edge and sprawl to the left.
-  // Same cell language as the tzula.ai bonsai: a grid of 0/1, leaves turn over in gusts.
-  const R = () => rand();
-  const w = 900, h = 248, cell = 3.85, ox = 10, oy = 8;
-  const cols = Math.floor((w - 2 * ox) / cell), rows = Math.floor((h - 2 * oy) / cell);
-  const grid = new Map(); // "c,r" -> { c, r, t, b, leaf }
-  const put = (c, r, t, b, leaf = false) => {
-    c = Math.round(c); r = Math.round(r);
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
-    const k = `${c},${r}`, cur = grid.get(k);
-    grid.set(k, { c, r, t: Math.min(t, cur?.t ?? t), b: Math.max(b, cur?.b ?? 0), leaf: leaf || (cur?.leaf ?? false) });
-  };
-
-  // Vines root at the right edge and sprawl to the left.
-  const vines = [
-    { y0: 6, root: [cols - 1, 9], start: 0.0, a: 3.5 },
-    { y0: 20, root: [cols - 1, 22], start: 0.4, a: 5 },
-    { y0: 33, root: [cols - 1, 36], start: 0.15, a: 4.5 },
-    { y0: 52, root: [cols - 1, 50], start: 0.55, a: 3 },
-  ];
-  const speed = 58; // cells per second
-  const smooth = (u) => u * u * (3 - 2 * u);
-  for (const v of vines) {
-    const [ex, ey] = v.root, p = R() * 6, q = R() * 6;
-    const start = v.start;
-    let len = 0, px = ex, py = ey;
-    for (let x = ex; x >= 0; x -= 0.25) {
-      const d = ex - x; // distance from the root
-      const wander = v.y0 + v.a * Math.sin(x / 11 + p) + 2 * Math.sin(x / 4.3 + q);
-      const k = smooth(Math.max(0, 1 - d / 34));
-      const y = wander * (1 - k) + ey * k;
-      len += Math.hypot(x - px, y - py); px = x; py = y;
-      // Thick like a trunk near the root, thinning toward the tip.
-      const t = start + len / speed, rad = d < ex * 0.35 ? 1 : 0.4;
-      for (let dy = -2; dy <= 2; dy++) if (Math.abs(dy) <= rad + 0.2) put(x, y + dy, t, 0.5 - 0.15 * Math.abs(dy));
-      // Tendrils curl off the stem.
-      if (R() < 0.004 && d > 10 && x > 6) {
-        const dir = R() < 0.5 ? -1 : 1, turns = 1.2 + R();
-        for (let s = 0; s < 1; s += 0.02) {
-          const ang = s * turns * Math.PI * 2, rr = 7 * (1 - s);
-          put(x - s * 10 - rr * Math.sin(ang) * 0.6, y + dir * (3 + s * 6 - rr * Math.cos(ang) * 0.5), t + s * 0.5, 0.32);
-        }
-      }
-      // Leaves sit beside the stem.
-      if (R() < 0.014 && d > 4) {
-        const side = R() < 0.5 ? -1 : 1, lx = x - 1 - R() * 2, ly = y + side * (2 + R());
-        for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++)
-          if ((a / 2.4) ** 2 + (b / 1.3) ** 2 <= 1) put(lx + a, ly + side * (b + 1) - a * 0.3 * side, t + 0.15, 0.6 + R() * 0.15, true);
-      }
-    }
-  }
-
-  const cells = [...grid.values()];
-  const done = Math.max(...cells.map((g) => g.t)) + 0.6;
-  let out = "";
-  for (const { c, r, t, b, leaf } of cells) {
-    const x = (ox + c * cell + cell / 2).toFixed(1), y = (oy + r * cell + cell * 0.82).toFixed(1);
-    const bit = R() < 0.5 ? 0 : 1, grow = `animation-delay:${t.toFixed(2)}s`;
-    if (!leaf) { out += `<text x="${x}" y="${y}" opacity="${b.toFixed(2)}" class="g" style="${grow}">${bit}</text>`; continue; }
-    // Gusts travel left to right once the vines have grown.
-    const gust = `animation-duration:${(5 + R() * 1.2).toFixed(2)}s;animation-delay:${(done + c * 0.03 + Math.sin(r * 0.4) * 0.4).toFixed(2)}s`;
-    out += `<g opacity="${b.toFixed(2)}" class="g" style="${grow}"><text x="${x}" y="${y}" class="f" style="${gust}">${bit}</text><text x="${x}" y="${y}" class="k" style="${gust}">${1 - bit}</text></g>`;
-  }
-  return frame(w, h, `
-<defs><radialGradient id="v" cx="45%" cy="55%" r="70%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
-<rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
-<g font-family="${MONO}" font-size="${(cell * 0.95).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>`,
-  `.g { animation: grow .35s cubic-bezier(.3,0,.1,1) both; transform-box: fill-box; transform-origin: center; }
+// ---- plants: everything organic is drawn in the tzula.ai cell language ----
+// A grid of 0/1 bits; each cell flips into view when growth reaches it, and leaves turn over in gusts.
+const R = () => rand();
+const CELL = 3.85;
+const PLANT_CSS = `.g { animation: grow .35s cubic-bezier(.3,0,.1,1) both; transform-box: fill-box; transform-origin: center; }
 @keyframes grow { from { opacity: 0; transform: scaleY(0); } }
 .f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
 .k { animation-name: back; transform: scaleY(0); }
 @keyframes front { 0%,38% { transform: scaleY(1); animation-timing-function: cubic-bezier(.7,0,.2,1); } 43%,77% { transform: scaleY(0); } 82%,100% { transform: scaleY(1); } }
-@keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`);
+@keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`;
+
+function plantGrid(w, h, ox = 0, oy = 0) {
+  const cols = Math.floor((w - 2 * ox) / CELL), rows = Math.floor((h - 2 * oy) / CELL);
+  const cells = new Map(); // "c,r" -> { c, r, t, b, leaf }
+  const put = (c, r, t, b, leaf = false) => {
+    c = Math.round(c); r = Math.round(r);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+    const k = `${c},${r}`, cur = cells.get(k);
+    cells.set(k, { c, r, t: Math.min(t, cur?.t ?? t), b: Math.max(b, cur?.b ?? 0), leaf: leaf || (cur?.leaf ?? false) });
+  };
+  const render = () => {
+    const all = [...cells.values()];
+    const done = Math.max(0, ...all.map((g) => g.t)) + 0.6;
+    let out = "";
+    for (const { c, r, t, b, leaf } of all) {
+      const x = (ox + c * CELL + CELL / 2).toFixed(1), y = (oy + r * CELL + CELL * 0.82).toFixed(1);
+      const bit = R() < 0.5 ? 0 : 1, grow = `animation-delay:${t.toFixed(2)}s`;
+      if (!leaf) { out += `<text x="${x}" y="${y}" opacity="${b.toFixed(2)}" class="g" style="${grow}">${bit}</text>`; continue; }
+      // Gusts travel left to right once everything has grown.
+      const gust = `animation-duration:${(5 + R() * 1.2).toFixed(2)}s;animation-delay:${(done + c * 0.03 + Math.sin(r * 0.4) * 0.4).toFixed(2)}s`;
+      out += `<g opacity="${b.toFixed(2)}" class="g" style="${grow}"><text x="${x}" y="${y}" class="f" style="${gust}">${bit}</text><text x="${x}" y="${y}" class="k" style="${gust}">${1 - bit}</text></g>`;
+    }
+    return `<g font-family="${MONO}" font-size="${(CELL * 0.95).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>`;
+  };
+  return { cols, rows, put, render };
+}
+
+// A leaf: a small ellipse of leaf cells at (x, y), leaning toward `side`.
+function leaf(put, x, y, side, t, size = 1) {
+  for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++)
+    if ((a / (2.4 * size)) ** 2 + (b / (1.3 * size)) ** 2 <= 1) put(x + a, y + side * (b + 1) - a * 0.3 * side, t, 0.6 + R() * 0.15, true);
+}
+
+// A creeper along a path of cell points: stem cells timed by arc length, leaves and tendrils on the way.
+function creep(put, pts, { t0 = 0, speed = 58, thick = 0.4, bright = 0.5, leafP = 0.014, tendrilP = 0.004, side = 0 } = {}) {
+  let len = 0, [px, py] = pts[0];
+  pts.forEach(([x, y], i) => {
+    len += Math.hypot(x - px, y - py); px = x; py = y;
+    const t = t0 + len / speed, u = i / pts.length, rad = thick * (1 - 0.6 * u);
+    for (let dy = -2; dy <= 2; dy++) if (Math.abs(dy) <= rad + 0.2) put(x, y + dy, t, bright - 0.15 * Math.abs(dy));
+    if (R() < tendrilP && u > 0.1) {
+      const dir = side || (R() < 0.5 ? -1 : 1), turns = 1.2 + R(), dx = R() < 0.5 ? -1 : 1;
+      for (let s = 0; s < 1; s += 0.03) {
+        const ang = s * turns * Math.PI * 2, rr = 5 * (1 - s);
+        put(x + dx * (s * 7 + rr * Math.sin(ang) * 0.6), y + dir * (2 + s * 4 - rr * Math.cos(ang) * 0.5), t + s * 0.5, bright * 0.65);
+      }
+    }
+    if (R() < leafP && u > 0.03) {
+      const s = side || (R() < 0.5 ? -1 : 1);
+      leaf(put, x + (R() - 0.5) * 3, y + s * (2 + R()), s, t + 0.15);
+    }
+  });
+}
+
+// ---- header: vines of bits root at the right edge and sprawl to the left ----
+function header() {
+  const w = 900, h = 248;
+  const { cols, put, render } = plantGrid(w, h, 10, 8);
+  const smooth = (u) => u * u * (3 - 2 * u);
+  for (const v of [
+    { y0: 6, root: 9, start: 0.0, a: 3.5 },
+    { y0: 20, root: 22, start: 0.4, a: 5 },
+    { y0: 33, root: 36, start: 0.15, a: 4.5 },
+    { y0: 52, root: 50, start: 0.55, a: 3 },
+  ]) {
+    const ex = cols - 1, p = R() * 6, q = R() * 6, pts = [];
+    for (let x = ex; x >= 0; x -= 0.25) {
+      const k = smooth(Math.max(0, 1 - (ex - x) / 34));
+      const wander = v.y0 + v.a * Math.sin(x / 11 + p) + 2 * Math.sin(x / 4.3 + q);
+      pts.push([x, wander * (1 - k) + v.root * k]);
+    }
+    // Thick like a trunk near the root, thinning toward the tip.
+    creep(put, pts, { t0: v.start, thick: 1, leafP: 0.014 });
+  }
+  return frame(w, h, `
+<defs><radialGradient id="v" cx="45%" cy="55%" r="70%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
+<rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
+${render()}`, PLANT_CSS);
 }
 
 // ---- stats: split-flap counters that spin up and land on the real value ----
@@ -185,6 +198,7 @@ function statsCard() {
     ["COMMITS · 24H", stats.day, "LAST 24 HOURS"],
   ];
   const tw = (w - 40 - 3 * 14) / 4;
+  const { put, render } = plantGrid(w, h);
   let body = "";
   tiles.forEach(([label, value, sub], t) => {
     const x = 20 + t * (tw + 14);
@@ -195,63 +209,64 @@ function statsCard() {
 <circle cx="${x + tw - 18}" cy="44" r="3" fill="${C.glow}" class="p" style="animation-delay:${t * 0.4}s"/>
 ${flap(value, x + 16, 72, cw, ch, 0.2 + t * 0.25)}
 <text x="${x + 16}" y="${h - 40}" font-family="${MONO}" font-size="10" letter-spacing="2" fill="${C.dim}">${esc(sub)}</text>`;
+    // Creepers overgrow each tile: one climbs the left edge and runs along the top,
+    // another crawls in along the bottom from the right corner.
+    const L = x / CELL, T = 20 / CELL, Rt = (x + tw) / CELL, B = (h - 20) / CELL, j = R() * 6;
+    const climb = [];
+    for (let s = B + 1; s >= T + 2; s -= 0.25) climb.push([L + 0.6 * Math.sin(s / 2.3 + j), s]);
+    for (let s = L + 1; s <= L + (Rt - L) * (0.45 + R() * 0.35); s += 0.25) climb.push([s, T + 0.6 * Math.sin(s / 2.1 + j)]);
+    creep(put, climb, { t0: 0.6 + t * 0.35, speed: 45, thick: 0.7, bright: 0.7, side: -1, leafP: 0.05, tendrilP: 0.008 });
+    const crawl = [];
+    for (let s = Rt + 1; s >= Rt - (Rt - L) * (0.3 + R() * 0.3); s -= 0.25) crawl.push([s, B + 0.6 * Math.sin(s / 2.2 + j)]);
+    creep(put, crawl, { t0: 1.4 + t * 0.35, speed: 45, thick: 0.5, bright: 0.65, side: 1, leafP: 0.05, tendrilP: 0 });
   });
-  return frame(w, h, `<g font-family="${MONO}" font-weight="600" fill="${C.hi}" font-size="30">${body}</g>`,
+  return frame(w, h, `<g font-family="${MONO}" font-weight="600" fill="${C.hi}" font-size="30">${body}</g>
+${render()}`,
     `.s { animation: spin 1.6s cubic-bezier(.2,.7,.2,1) both; }
 @keyframes spin { from { transform: translateY(0); } to { transform: translateY(var(--to)); } }
 .p { animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
-text { font-variant-numeric: tabular-nums; }`);
+text { font-variant-numeric: tabular-nums; }
+${PLANT_CSS}`);
 }
 
-// ---- contribution year as a continuous heat field ----
+// ---- contributions: a meadow, one stem per week, as tall as that week was busy ----
 function gridCard() {
   const weeks = cc.contributionCalendar.weeks;
-  const x0 = 28, y0 = 56, w = 900, cw = (w - x0 * 2) / weeks.length, ch = 15, h = y0 + 7 * ch + 54;
-  const sorted = days.map((d) => d.contributionCount).filter(Boolean).sort((a, b) => a - b);
+  const x0 = 28, y0 = 44, w = 900, fieldH = 130, h = y0 + fieldH + 40;
+  const { put, render } = plantGrid(w, h);
+  const totals = weeks.map((wk) => wk.contributionDays.reduce((n, d) => n + d.contributionCount, 0));
+  const sorted = totals.filter(Boolean).sort((a, b) => a - b);
   const max = Math.max(1, sorted[Math.floor(sorted.length * 0.95)] || 1);
-  let cells = "", hits = "", months = "", lastM = -1;
-  weeks.forEach((wk, wi) => wk.contributionDays.forEach((d) => {
-    const dt = new Date(d.date + "T00:00:00Z"), dow = dt.getUTCDay();
-    const v = Math.min(1, d.contributionCount / max) ** 0.55, g = Math.round(v * 255);
-    const x = x0 + wi * cw, y = y0 + dow * ch;
-    if (g) cells += `<rect x="${x.toFixed(1)}" y="${y}" width="${(cw + 0.6).toFixed(1)}" height="${ch + 0.6}" fill="rgb(${g},${g},${g})"/>`;
-    hits += `<rect x="${x.toFixed(1)}" y="${y}" width="${cw.toFixed(1)}" height="${ch}" fill="transparent"><title>${d.date}: ${d.contributionCount}</title></rect>`;
-    if (dow === 0 && dt.getUTCMonth() !== lastM && dt.getUTCDate() <= 7) {
-      lastM = dt.getUTCMonth();
-      months += `<text x="${x.toFixed(1)}" y="${y0 + 7 * ch + 20}">${dt.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase()}</text>`;
+  const cw = (w - x0 * 2) / weeks.length, ground = (y0 + fieldH) / CELL, maxH = fieldH / CELL - 3;
+  let hits = "", months = "", lastM = -1;
+  // Soil: a faint line of bits along the bottom.
+  for (let c = x0 / CELL; c <= (w - x0) / CELL; c++) put(c, ground + 1 + (R() < 0.3 ? 1 : 0), 0.1 + c * 0.004, 0.18);
+  weeks.forEach((wk, wi) => {
+    const v = Math.min(1, totals[wi] / max) ** 0.6, base = (x0 + wi * cw + cw / 2) / CELL;
+    const tall = Math.round(v * maxH), lean = (R() - 0.35) * 4, t0 = 0.3 + wi * 0.035;
+    for (let k = 0; k <= tall; k += 0.5) {
+      const u = tall ? k / tall : 0;
+      put(base + lean * u * u, ground - k, t0 + k / 26, 0.4 + 0.5 * u * v + 0.1);
+      // Alternate leaves up the stem; a cluster at the tip of busy weeks.
+      if (k > 3 && k % 6 === 0 && k < tall - 2) leaf(put, base + lean * u * u + (k % 12 ? 2 : -2), ground - k, k % 12 ? 1 : -1, t0 + k / 26 + 0.1, 0.7);
     }
-  }));
-  // Grey intensities -> blurred -> mapped through a dusk-to-moonlight palette: a heat field, not blocks.
+    if (tall > 4) leaf(put, base + lean, ground - tall - 1, -1, t0 + tall / 26 + 0.1, 0.9);
+    const first = wk.contributionDays[0];
+    const x = x0 + wi * cw;
+    hits += `<rect x="${x.toFixed(1)}" y="${y0}" width="${cw.toFixed(1)}" height="${fieldH}" fill="transparent"><title>Week of ${first.date}: ${totals[wi]}</title></rect>`;
+    const dt = new Date(first.date + "T00:00:00Z");
+    if (dt.getUTCMonth() !== lastM && dt.getUTCDate() <= 7) {
+      lastM = dt.getUTCMonth();
+      months += `<text x="${x.toFixed(1)}" y="${h - 12}">${dt.toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase()}</text>`;
+    }
+  });
   return frame(w, h, `
-<defs>
-  <filter id="heat" color-interpolation-filters="sRGB" x="-5%" y="-30%" width="110%" height="160%">
-    <feGaussianBlur stdDeviation="7 5"/>
-    <feComponentTransfer>
-      <feFuncR type="table" tableValues="0.04 0.07 0.16 0.36 0.66 0.92"/>
-      <feFuncG type="table" tableValues="0.045 0.09 0.24 0.48 0.78 0.96"/>
-      <feFuncB type="table" tableValues="0.05 0.11 0.24 0.46 0.82 1"/>
-      <feFuncA type="linear" slope="0" intercept="1"/>
-    </feComponentTransfer>
-  </filter>
-  <clipPath id="field"><rect x="${x0}" y="${y0 - 6}" width="${w - x0 * 2}" height="${7 * ch + 12}" rx="10"/></clipPath>
-  <linearGradient id="legend"><stop offset="0" stop-color="#0d0f12"/><stop offset=".35" stop-color="#3f5466"/><stop offset=".7" stop-color="#9eb8cc"/><stop offset="1" stop-color="${C.glow}"/></linearGradient>
-  <linearGradient id="sheen" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".07"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-</defs>
-<text x="${x0}" y="32" font-family="${MONO}" font-size="11" letter-spacing="3" fill="${C.mid}">CONTRIBUTIONS</text>
-<text x="${w - x0}" y="32" text-anchor="end" font-family="${MONO}" font-size="11" letter-spacing="2" fill="${C.dim}">${fmt(stats.contributions)} IN THE LAST YEAR</text>
-<g clip-path="url(#field)">
-  <rect x="${x0}" y="${y0 - 6}" width="${w - x0 * 2}" height="${7 * ch + 12}" fill="#0b0d10"/>
-  <g filter="url(#heat)"><rect x="${x0 - 20}" y="${y0 - 20}" width="${w - x0 * 2 + 40}" height="${7 * ch + 40}" fill="#000"/>${cells}</g>
-  <rect class="sh" x="${x0 - 200}" y="${y0 - 6}" width="200" height="${7 * ch + 12}" fill="url(#sheen)"/>
-</g>
+<text x="${x0}" y="30" font-family="${MONO}" font-size="11" letter-spacing="3" fill="${C.mid}">CONTRIBUTIONS</text>
+<text x="${w - x0}" y="30" text-anchor="end" font-family="${MONO}" font-size="11" letter-spacing="2" fill="${C.dim}">${fmt(stats.contributions)} IN THE LAST YEAR</text>
+${render()}
 <g font-family="${MONO}" font-size="9" letter-spacing="2" fill="${C.dim}">${months}</g>
-<g>${hits}</g>
-<text x="${w - x0 - 132}" y="${h - 14}" text-anchor="end" font-family="${MONO}" font-size="9" letter-spacing="2" fill="${C.dim}">LESS</text>
-<rect x="${w - x0 - 124}" y="${h - 21}" width="90" height="7" rx="3.5" fill="url(#legend)"/>
-<text x="${w - x0}" y="${h - 14}" text-anchor="end" font-family="${MONO}" font-size="9" letter-spacing="2" fill="${C.dim}">MORE</text>`,
-    `.sh { animation: sheen 9s ease-in-out infinite; }
-@keyframes sheen { from { transform: translateX(0); } to { transform: translateX(${w + 200}px); } }`);
+<g>${hits}</g>`, PLANT_CSS);
 }
 
 mkdirSync("tzula", { recursive: true });
