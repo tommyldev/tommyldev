@@ -1,6 +1,18 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tommyldev/tommyldev/master/tzula/header.svg" alt="Tommy" width="100%">
+</p>
 
-[![](https://raw.githubusercontent.com/tommyliu9/tommyliu9/master/profile-summary-card-output/dracula/0-profile-details.svg)](https://github.com/vn7n24fzkq/github-profile-summary-cards)
-[![](https://raw.githubusercontent.com/tommyliu9/tommyliu9/master/profile-summary-card-output/dracula/1-repos-per-language.svg)](https://github.com/vn7n24fzkq/github-profile-summary-cards) [![](https://raw.githubusercontent.com/tommyliu9/tommyliu9/master/profile-summary-card-output/dracula/2-most-commit-language.svg)](https://github.com/vn7n24fzkq/github-profile-summary-cards)
-[![](https://raw.githubusercontent.com/tommyliu9/tommyliu9/master/profile-summary-card-output/dracula/3-stats.svg)](https://github.com/vn7n24fzkq/github-profile-summary-cards) [![](https://raw.githubusercontent.com/tommyliu9/tommyliu9/master/profile-summary-card-output/dracula/4-productive-time.svg)](https://github.com/vn7n24fzkq/github-profile-summary-cards)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tommyldev/tommyldev/master/tzula/stats.svg" alt="Commits, contributions, pull requests and streak" width="100%">
+</p>
 
-[![Tommmy's GitHub stats](https://github-readme-stats.vercel.app/api?username=tommyldev)](https://github.com/anuraghazra/github-readme-stats)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tommyldev/tommyldev/master/tzula/field.svg" alt="Contributions in the last year" width="100%">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tommyldev/tommyldev/master/profile-summary-card-output/github_dark/1-repos-per-language.svg" width="49%"> <img src="https://raw.githubusercontent.com/tommyldev/tommyldev/master/profile-summary-card-output/github_dark/2-most-commit-language.svg" width="49%">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tommyldev/tommyldev/master/profile-summary-card-output/github_dark/4-productive-time.svg" width="49%">
+</p>
