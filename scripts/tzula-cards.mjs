@@ -121,47 +121,50 @@ function leaf(put, x, y, side, t, size = 1) {
     if ((a / (2.4 * size)) ** 2 + (b / (1.3 * size)) ** 2 <= 1) put(x + a, y + side * (b + 1) - a * 0.3 * side, t, 0.6 + R() * 0.15, true);
 }
 
-// A creeper along a path of cell points: stem cells timed by arc length, leaves and tendrils on the way.
-function creep(put, pts, { t0 = 0, speed = 58, thick = 0.4, bright = 0.5, leafP = 0.014, tendrilP = 0.004, side = 0 } = {}) {
-  let len = 0, [px, py] = pts[0];
-  pts.forEach(([x, y], i) => {
-    len += Math.hypot(x - px, y - py); px = x; py = y;
-    const t = t0 + len / speed, u = i / pts.length, rad = thick * (1 - 0.6 * u);
-    for (let dy = -2; dy <= 2; dy++) if (Math.abs(dy) <= rad + 0.2) put(x, y + dy, t, bright - 0.15 * Math.abs(dy));
-    if (R() < tendrilP && u > 0.1) {
-      const dir = side || (R() < 0.5 ? -1 : 1), turns = 1.2 + R(), dx = R() < 0.5 ? -1 : 1;
-      for (let s = 0; s < 1; s += 0.03) {
-        const ang = s * turns * Math.PI * 2, rr = 5 * (1 - s);
-        put(x + dx * (s * 7 + rr * Math.sin(ang) * 0.6), y + dir * (2 + s * 4 - rr * Math.cos(ang) * 0.5), t + s * 0.5, bright * 0.65);
-      }
+// Recursive growth: a stem random-walks from (x, y) along `ang`, forks into thinner children
+// that do the same, and ends in a leaf or a curling tendril. Timing follows growth, so the
+// plant visibly unfolds. `avoid(x, y)` keeps it off content; `hold` pulls the heading back
+// toward the stem's own direction so long runners stay on course.
+function grow(put, o) {
+  const { len, depth, speed = 50, bright = 0.55, curl = 0.09, hold = 0.03, avoid, bounds, branchP = 0.018, leafP = 0.02 } = o;
+  let { x, y, ang, t, thick = 1 } = o;
+  const home = ang, step = 0.3;
+  let s = 0, tries = 0;
+  while (s < len && tries < 400) {
+    ang += (R() - 0.5) * curl * 2 + (home - ang) * hold;
+    const nx = x + Math.cos(ang) * step, ny = y + Math.sin(ang) * step;
+    if ((avoid && avoid(nx, ny)) || (bounds && !bounds(nx, ny))) { ang += (R() < 0.5 ? -1 : 1) * 0.5; tries++; continue; }
+    tries = 0; x = nx; y = ny; s += step;
+    const u = s / len, tt = t + s / speed, rad = thick * (1 - 0.65 * u);
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++)
+      if (dx * dx + dy * dy <= (rad + 0.25) ** 2) put(x + dx, y + dy, tt, bright - 0.12 * Math.hypot(dx, dy));
+    if (depth > 0 && u > 0.08 && u < 0.85 && R() < branchP) {
+      grow(put, { ...o, x, y, t: tt, depth: depth - 1, thick: rad * 0.7, bright: bright * 0.92,
+        ang: ang + (R() < 0.5 ? -1 : 1) * (0.45 + R() * 0.7), len: (len - s) * (0.35 + R() * 0.4) });
     }
-    if (R() < leafP && u > 0.03) {
-      const s = side || (R() < 0.5 ? -1 : 1);
-      leaf(put, x + (R() - 0.5) * 3, y + s * (2 + R()), s, t + 0.15);
+    if (u > 0.05 && R() < leafP) { const sd = R() < 0.5 ? -1 : 1; leaf(put, x + (R() - 0.5) * 2, y + sd * 1.5, sd, tt + 0.15, 0.6 + R() * 0.35); }
+  }
+  const tt = t + s / speed;
+  if (R() < 0.55) leaf(put, x + Math.cos(ang) * 2, y + Math.sin(ang) * 2, R() < 0.5 ? -1 : 1, tt + 0.1, 0.8 + R() * 0.3);
+  else {
+    // A tendril curls off the tip.
+    const dir = R() < 0.5 ? -1 : 1, turns = 1 + R() * 1.2;
+    for (let k = 0; k < 1; k += 0.03) {
+      const a = ang + dir * k * turns * Math.PI * 2, r = 4 * (1 - k);
+      put(x + Math.cos(ang) * k * 5 + Math.cos(a) * r - Math.cos(ang) * 4, y + Math.sin(ang) * k * 5 + Math.sin(a) * r - Math.sin(ang) * 4, tt + k * 0.4, bright * 0.7);
     }
-  });
+  }
 }
 
 // ---- header: vines of bits root at the right edge and sprawl to the left ----
 function header() {
   const w = 900, h = 248;
-  const { cols, put, render } = plantGrid(w, h, 10, 8);
-  const smooth = (u) => u * u * (3 - 2 * u);
-  for (const v of [
-    { y0: 6, root: 9, start: 0.0, a: 3.5 },
-    { y0: 20, root: 22, start: 0.4, a: 5 },
-    { y0: 33, root: 36, start: 0.15, a: 4.5 },
-    { y0: 52, root: 50, start: 0.55, a: 3 },
-  ]) {
-    const ex = cols - 1, p = R() * 6, q = R() * 6, pts = [];
-    for (let x = ex; x >= 0; x -= 0.25) {
-      const k = smooth(Math.max(0, 1 - (ex - x) / 34));
-      const wander = v.y0 + v.a * Math.sin(x / 11 + p) + 2 * Math.sin(x / 4.3 + q);
-      pts.push([x, wander * (1 - k) + v.root * k]);
-    }
-    // Thick like a trunk near the root, thinning toward the tip.
-    creep(put, pts, { t0: v.start, thick: 1, leafP: 0.014 });
-  }
+  const { cols, rows, put, render } = plantGrid(w, h, 10, 8);
+  const bounds = (x, y) => y > 1 && y < rows - 2 && x > -4;
+  [9, 22, 36, 50].forEach((root, i) => {
+    grow(put, { x: cols - 1, y: root, ang: Math.PI + (R() - 0.5) * 0.3, len: cols * (0.85 + R() * 0.3), depth: 2,
+      t: [0, 0.4, 0.15, 0.55][i], speed: 58, thick: 0.8, curl: 0.1, hold: 0.03, bounds, branchP: 0.006, leafP: 0.008 });
+  });
   return frame(w, h, `
 <defs><radialGradient id="v" cx="45%" cy="55%" r="70%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
 <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
@@ -198,7 +201,11 @@ function statsCard() {
     ["COMMITS · 24H", stats.day, "LAST 24 HOURS"],
   ];
   const tw = (w - 40 - 3 * 14) / 4;
-  const { put, render } = plantGrid(w, h);
+  const { cols, rows, put, render } = plantGrid(w, h);
+  // Plants may wander anywhere except over a tile's contents.
+  const inner = tiles.map((_, t) => { const x = 20 + t * (tw + 14); return [(x + 8) / CELL, 28 / CELL, (x + tw - 8) / CELL, (h - 26) / CELL]; });
+  const avoid = (cx, cy) => inner.some(([a, b, c, d]) => cx > a && cx < c && cy > b && cy < d);
+  const bounds = (cx, cy) => cx > 1 && cy > 1 && cx < cols - 1 && cy < rows - 1;
   let body = "";
   tiles.forEach(([label, value, sub], t) => {
     const x = 20 + t * (tw + 14);
@@ -209,16 +216,12 @@ function statsCard() {
 <circle cx="${x + tw - 18}" cy="44" r="3" fill="${C.glow}" class="p" style="animation-delay:${t * 0.4}s"/>
 ${flap(value, x + 16, 72, cw, ch, 0.2 + t * 0.25)}
 <text x="${x + 16}" y="${h - 40}" font-family="${MONO}" font-size="10" letter-spacing="2" fill="${C.dim}">${esc(sub)}</text>`;
-    // Creepers overgrow each tile: one climbs the left edge and runs along the top,
-    // another crawls in along the bottom from the right corner.
-    const L = x / CELL, T = 20 / CELL, Rt = (x + tw) / CELL, B = (h - 20) / CELL, j = R() * 6;
-    const climb = [];
-    for (let s = B + 1; s >= T + 2; s -= 0.25) climb.push([L + 0.6 * Math.sin(s / 2.3 + j), s]);
-    for (let s = L + 1; s <= L + (Rt - L) * (0.45 + R() * 0.35); s += 0.25) climb.push([s, T + 0.6 * Math.sin(s / 2.1 + j)]);
-    creep(put, climb, { t0: 0.6 + t * 0.35, speed: 45, thick: 0.7, bright: 0.7, side: -1, leafP: 0.05, tendrilP: 0.008 });
-    const crawl = [];
-    for (let s = Rt + 1; s >= Rt - (Rt - L) * (0.3 + R() * 0.3); s -= 0.25) crawl.push([s, B + 0.6 * Math.sin(s / 2.2 + j)]);
-    creep(put, crawl, { t0: 1.4 + t * 0.35, speed: 45, thick: 0.5, bright: 0.65, side: 1, leafP: 0.05, tendrilP: 0 });
+    // Each tile is overgrown from its bottom corners: a climber up the left edge, a runner along the bottom.
+    const L = x / CELL, Rt = (x + tw) / CELL, B = (h - 22) / CELL;
+    grow(put, { x: L, y: B, ang: -Math.PI / 2, len: (h - 40) / CELL + 20, depth: 3, t: 0.6 + t * 0.35, speed: 45,
+      thick: 0.5, bright: 0.7, curl: 0.1, hold: 0.02, avoid, bounds, branchP: 0.012, leafP: 0.025 });
+    grow(put, { x: Rt, y: B + 1, ang: Math.PI, len: (Rt - L) * (0.4 + R() * 0.4), depth: 2, t: 1.3 + t * 0.35, speed: 45,
+      thick: 0.4, bright: 0.65, curl: 0.1, hold: 0.03, avoid, bounds, branchP: 0.012, leafP: 0.025 });
   });
   return frame(w, h, `<g font-family="${MONO}" font-weight="600" fill="${C.hi}" font-size="30">${body}</g>
 ${render()}`,
@@ -244,14 +247,11 @@ function gridCard() {
   for (let c = x0 / CELL; c <= (w - x0) / CELL; c++) put(c, ground + 1 + (R() < 0.3 ? 1 : 0), 0.1 + c * 0.004, 0.18);
   weeks.forEach((wk, wi) => {
     const v = Math.min(1, totals[wi] / max) ** 0.6, base = (x0 + wi * cw + cw / 2) / CELL;
-    const tall = Math.round(v * maxH), lean = (R() - 0.35) * 4, t0 = 0.3 + wi * 0.035;
-    for (let k = 0; k <= tall; k += 0.5) {
-      const u = tall ? k / tall : 0;
-      put(base + lean * u * u, ground - k, t0 + k / 26, 0.4 + 0.5 * u * v + 0.1);
-      // Alternate leaves up the stem; a cluster at the tip of busy weeks.
-      if (k > 3 && k % 6 === 0 && k < tall - 2) leaf(put, base + lean * u * u + (k % 12 ? 2 : -2), ground - k, k % 12 ? 1 : -1, t0 + k / 26 + 0.1, 0.7);
-    }
-    if (tall > 4) leaf(put, base + lean, ground - tall - 1, -1, t0 + tall / 26 + 0.1, 0.9);
+    const tall = v * maxH, t0 = 0.3 + wi * 0.035;
+    // Each week grows a small plant, as tall and as branched as the week was busy.
+    if (tall >= 1) grow(put, { x: base, y: ground, ang: -Math.PI / 2 + (R() - 0.5) * 0.3, len: tall, depth: tall > 14 ? 2 : 1,
+      t: t0, speed: 26, thick: 0.1, bright: 0.45 + 0.4 * v, curl: 0.1, hold: 0.06, branchP: 0.025, leafP: 0.012,
+      bounds: (cx, cy) => cy > y0 / CELL && cy <= ground });
     const first = wk.contributionDays[0];
     const x = x0 + wi * cw;
     hits += `<rect x="${x.toFixed(1)}" y="${y0}" width="${cw.toFixed(1)}" height="${fieldH}" fill="transparent"><title>Week of ${first.date}: ${totals[wi]}</title></rect>`;
