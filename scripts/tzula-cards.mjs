@@ -80,7 +80,7 @@ const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---- header: spaced wordmark over a field of flipping bits ----
 function header() {
-  // Vines of bits grow from the left edge; where they reach the right they become 毅力.
+  // 毅力 is brushed first at the right; vines of bits then grow out of it like roots, sprawling to the left edge.
   // Same cell language as the tzula.ai bonsai: a grid of 0/1, leaves turn over in gusts.
   // yili-mask.json: per-cell ink coverage of 毅 and 力 (Zhi Mang Xing, OFL), 31x31 each, trimmed to the brush.
   const mask = JSON.parse(readFileSync(new URL("./yili-mask.json", import.meta.url), "utf8"));
@@ -99,48 +99,52 @@ function header() {
   const ink = [];
   for (const [g, gc, gr] of [[mask.yi, cols - 40, 0], [mask.li, cols - 40, 29]])
     g.forEach((row, y) => row.forEach((v, x) => { if (v > 0.22) ink.push([gc + x, gr + y, v]); }));
-  // Each vine lands on the leftmost ink within a band of rows.
-  const entryAt = (r0, r1) => ink.filter(([, r]) => r >= r0 && r <= r1).reduce((a, b) => (b[0] < a[0] ? b : a));
+  // Brush the characters first: 毅 then 力, each stroked top to bottom with a little lean.
+  const inkT = (c, r) => (r >= 29 ? 1.1 : 0) + ((r % 29) * 0.034 + (c - (cols - 40)) * 0.008) * (0.9 + 0.2 * R());
+  const inkAt = new Map();
+  for (const [c, r, v] of ink) {
+    const t = inkT(c, r);
+    inkAt.set(`${c},${r}`, t);
+    put(c, r, t, 0.7 + 0.3 * v);
+  }
+  // Each vine roots in the leftmost ink within a band of rows, once the brush has passed there.
+  const rootAt = (r0, r1) => ink.filter(([, r]) => r >= r0 && r <= r1).reduce((a, b) => (b[0] < a[0] ? b : a));
   const vines = [
-    { y0: 6, entry: entryAt(6, 9), start: 0.0, a: 3.5 },
-    { y0: 20, entry: entryAt(14, 18), start: 0.35, a: 5 },
-    { y0: 33, entry: entryAt(36, 44), start: 0.15, a: 4.5 },
-    { y0: 52, entry: entryAt(46, 52), start: 0.5, a: 3 },
+    { y0: 6, root: rootAt(6, 9), a: 3.5 },
+    { y0: 20, root: rootAt(14, 18), a: 5 },
+    { y0: 33, root: rootAt(36, 44), a: 4.5 },
+    { y0: 52, root: rootAt(46, 52), a: 3 },
   ];
   const speed = 58; // cells per second
   const smooth = (u) => u * u * (3 - 2 * u);
-  const arrivals = [];
   for (const v of vines) {
-    const [ex, ey] = v.entry, p = R() * 6, q = R() * 6;
-    let len = 0, px = 0, py = v.y0;
-    for (let x = 0; x <= ex; x += 0.25) {
+    const [ex, ey] = v.root, p = R() * 6, q = R() * 6;
+    const start = inkAt.get(`${ex},${ey}`) + 0.2;
+    let len = 0, px = ex, py = ey;
+    for (let x = ex; x >= 0; x -= 0.25) {
+      const d = ex - x; // distance from the root
       const wander = v.y0 + v.a * Math.sin(x / 11 + p) + 2 * Math.sin(x / 4.3 + q);
-      const k = smooth(Math.max(0, (x - (ex - 34)) / 34));
+      const k = smooth(Math.max(0, 1 - d / 34));
       const y = wander * (1 - k) + ey * k;
       len += Math.hypot(x - px, y - py); px = x; py = y;
-      const t = v.start + len / speed, rad = x < ex * 0.35 ? 1 : 0.4;
+      // Thick like a trunk near the root, thinning toward the tip.
+      const t = start + len / speed, rad = d < ex * 0.35 ? 1 : 0.4;
       for (let dy = -2; dy <= 2; dy++) if (Math.abs(dy) <= rad + 0.2) put(x, y + dy, t, 0.5 - 0.15 * Math.abs(dy));
       // Tendrils curl off the stem.
-      if (R() < 0.004 && x > 6 && x < ex - 10) {
+      if (R() < 0.004 && d > 10 && x > 6) {
         const dir = R() < 0.5 ? -1 : 1, turns = 1.2 + R();
         for (let s = 0; s < 1; s += 0.02) {
           const ang = s * turns * Math.PI * 2, rr = 7 * (1 - s);
-          put(x + s * 10 + rr * Math.sin(ang) * 0.6, y + dir * (3 + s * 6 - rr * Math.cos(ang) * 0.5), t + s * 0.5, 0.32);
+          put(x - s * 10 - rr * Math.sin(ang) * 0.6, y + dir * (3 + s * 6 - rr * Math.cos(ang) * 0.5), t + s * 0.5, 0.32);
         }
       }
       // Leaves sit beside the stem.
-      if (R() < 0.014 && x < ex - 4) {
-        const side = R() < 0.5 ? -1 : 1, lx = x + 1 + R() * 2, ly = y + side * (2 + R());
+      if (R() < 0.014 && d > 4) {
+        const side = R() < 0.5 ? -1 : 1, lx = x - 1 - R() * 2, ly = y + side * (2 + R());
         for (let a = -2; a <= 2; a++) for (let b = -1; b <= 1; b++)
-          if ((a / 2.4) ** 2 + (b / 1.3) ** 2 <= 1) put(lx + a, ly + side * (b + 1) + a * 0.3 * side, t + 0.15, 0.6 + R() * 0.15, true);
+          if ((a / 2.4) ** 2 + (b / 1.3) ** 2 <= 1) put(lx + a, ly + side * (b + 1) - a * 0.3 * side, t + 0.15, 0.6 + R() * 0.15, true);
       }
     }
-    arrivals.push([ex, ey, v.start + len / speed]);
-  }
-  // The brush is drawn outward from where the vines arrive.
-  for (const [c, r, v] of ink) {
-    const t = Math.min(...arrivals.map(([ex, ey, ta]) => ta + Math.hypot(c - ex, r - ey) * 0.045));
-    put(c, r, t, 0.7 + 0.3 * v);
   }
 
   const cells = [...grid.values()];
