@@ -1,5 +1,6 @@
 // Generates Tzula-styled profile SVGs into ./tzula/. Needs GITHUB_TOKEN and USERNAME.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const login = process.env.USERNAME || "tommyldev";
 const token = process.env.GITHUB_TOKEN;
@@ -264,4 +265,11 @@ mkdirSync("tzula", { recursive: true });
 writeFileSync("tzula/header.svg", header());
 writeFileSync("tzula/stats.svg", statsCard());
 writeFileSync("tzula/field.svg", gridCard());
+// Browsers cache the profile images by URL, so stamp each one with a content hash.
+let readme = readFileSync("README.md", "utf8");
+for (const f of ["header", "stats", "field"]) {
+  const v = createHash("sha1").update(readFileSync(`tzula/${f}.svg`)).digest("hex").slice(0, 8);
+  readme = readme.replace(new RegExp(`tzula/${f}\\.svg(\\?v=\\w+)?`), `tzula/${f}.svg?v=${v}`);
+}
+writeFileSync("README.md", readme);
 console.log(stats);
