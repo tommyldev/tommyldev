@@ -82,9 +82,11 @@ const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 function header() {
   // The bonsai from tzula.ai, cell for cell: a grid of bits. Leaves turn over to their complement as gusts pass.
   const tree = JSON.parse(readFileSync(new URL("./bonsai.json", import.meta.url), "utf8"));
+  // 毅力 (perseverance), brush strokes from Zhi Mang Xing (OFL), baked to paths so no font is needed.
+  const yili = JSON.parse(readFileSync(new URL("./yili.json", import.meta.url), "utf8"));
   const w = 900, h = 330, cell = 6.9;
   const cols = 39, rows = 43;
-  const ox = (w - cols * cell) / 2, oy = (h - rows * cell) / 2 - 2;
+  const ox = 110, oy = (h - rows * cell) / 2 - 2;
   let out = "";
   for (const [r, c, b, op, wph, wd] of tree) {
     const x = (ox + c * cell + cell / 2).toFixed(1), y = (oy + r * cell + cell * 0.82).toFixed(1);
@@ -99,9 +101,16 @@ function header() {
 <defs><radialGradient id="v" cx="50%" cy="60%" r="60%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
 <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
 <g font-family="${MONO}" font-size="${(cell * 0.92).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>
+<g fill="#d6dbe0" class="ink">
+  <path transform="translate(478 78) scale(0.15)" d="${yili.yi}"/>
+  <path transform="translate(628 78) scale(0.15)" d="${yili.li}"/>
+</g>
+<text x="628" y="250" text-anchor="middle" font-family="${MONO}" font-size="10" letter-spacing="6" fill="${C.dim}">PERSEVERANCE</text>
 <text x="${w - 22}" y="${h - 16}" text-anchor="end" font-family="${MONO}" font-size="10" letter-spacing="4" fill="${C.mid}">@${esc(login.toUpperCase())}  ·  SINCE ${stats.since}</text>`,
   `.f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
 .k { animation-name: back; transform: scaleY(0); }
+.ink { animation: ink 3s ease-out both; }
+@keyframes ink { from { opacity: 0; } to { opacity: .92; } }
 @keyframes front { 0%,38% { transform: scaleY(1); animation-timing-function: cubic-bezier(.7,0,.2,1); } 43%,77% { transform: scaleY(0); } 82%,100% { transform: scaleY(1); } }
 @keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`);
 }
