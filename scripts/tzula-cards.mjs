@@ -41,13 +41,12 @@ const { user } = await gql(
 
 const cc = user.contributionsCollection;
 const days = cc.contributionCalendar.weeks.flatMap((w) => w.contributionDays);
-let longest = 0, run = 0;
-for (const d of days) { run = d.contributionCount ? run + 1 : 0; longest = Math.max(longest, run); }
-// Current streak: today may still be empty, so start from yesterday in that case.
-let current = 0;
-let i = days.length - 1;
-if (i >= 0 && days[i].contributionCount === 0) i--;
-for (; i >= 0 && days[i].contributionCount; i--) current++;
+// Commits authored in the last 24 hours (exact window, unlike the day-bucketed calendar).
+const since = new Date(Date.now() - 864e5).toISOString().replace(/\.\d+Z$/, "Z");
+const day = await fetch(`https://api.github.com/search/commits?q=${encodeURIComponent(`author:${login} author-date:>${since}`)}&per_page=1`, {
+  headers: { authorization: `bearer ${token}`, accept: "application/vnd.github+json" },
+}).then((r) => r.json());
+if (typeof day.total_count !== "number") throw new Error(`commit search failed: ${JSON.stringify(day)}`);
 
 const stats = {
   contributions: cc.contributionCalendar.totalContributions,
@@ -56,7 +55,7 @@ const stats = {
   stars: user.repositories.nodes.reduce((n, r) => n + r.stargazerCount, 0),
   repos: user.repositories.totalCount,
   followers: user.followers.totalCount,
-  current, longest,
+  day: day.total_count,
   since: new Date(user.createdAt).getUTCFullYear(),
 };
 
@@ -81,85 +80,30 @@ const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---- header: spaced wordmark over a field of flipping bits ----
 function header() {
-  const w = 900, h = 210;
-  const R = () => rand();
-  // ---- tech layer: dim bit field ----
-  let bits = "";
-  for (let y = 14; y < h - 6; y += 12) for (let x = 14; x < w - 6; x += 10) {
-    bits += `<text x="${x}" y="${y}" class="b" style="animation-delay:${(R() * 12).toFixed(2)}s">${R() < 0.5 ? 0 : 1}</text>`;
-  }
-  // ---- organic layer: tapered trunk + limbs as smooth filled shapes ----
-  const tube = (f, r0, r1, n = 40) => {
-    const L = [], Rr = [];
-    for (let i = 0; i <= n; i++) {
-      const t = i / n, [x, y] = f(t), [x2, y2] = f(Math.min(1, t + 0.01)), [x1, y1] = f(Math.max(0, t - 0.01));
-      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, r = r0 + (r1 - r0) * t;
-      L.push([x - (dy / len) * r, y + (dx / len) * r]); Rr.push([x + (dy / len) * r, y - (dx / len) * r]);
+  // The bonsai from tzula.ai, cell for cell: a grid of bits. Leaves turn over to their complement as gusts pass.
+  const tree = JSON.parse(readFileSync(new URL("./bonsai.json", import.meta.url), "utf8"));
+  const w = 900, h = 330, cell = 6.9;
+  const cols = 39, rows = 43;
+  const ox = (w - cols * cell) / 2, oy = (h - rows * cell) / 2 - 2;
+  let out = "";
+  for (const [r, c, b, op, wph, wd] of tree) {
+    const x = (ox + c * cell + cell / 2).toFixed(1), y = (oy + r * cell + cell * 0.82).toFixed(1);
+    if (wd === undefined) {
+      out += `<text x="${x}" y="${y}" opacity="${op}">${b}</text>`;
+    } else {
+      const t = `animation-duration:${wd}s;animation-delay:${wph}s`;
+      out += `<g opacity="${op}"><text x="${x}" y="${y}" class="f" style="${t}">${b}</text><text x="${x}" y="${y}" class="k" style="${t}">${1 - b}</text></g>`;
     }
-    const pts = [...L, ...Rr.reverse()].map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`);
-    return `M${pts[0]} L${pts.slice(1).join(" ")} Z`;
-  };
-  const spine = (t) => [452 + 34 * Math.sin(t * Math.PI * 1.3) - 4 * t, 174 - 120 * t];
-  const limb = (t0, x1, y1, bend) => (t) => {
-    const [x0, y0] = spine(t0);
-    return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t - bend * Math.sin(t * Math.PI)];
-  };
-  const limbs = [[limb(0.45, 352, 96, 12), 7, 2], [limb(0.66, 596, 76, 16), 6, 2], [limb(0.3, 530, 120, 8), 5, 1.6], [limb(0.82, 470, 52, 6), 5, 2]];
-  const wood = [tube(spine, 15, 4), ...limbs.map(([f, a, b]) => tube(f, a, b))]
-    .map((d) => `<path d="${d}" fill="url(#bark)"/>`).join("");
-  // Foliage pads: clusters of small leaves, domed top, flat underside. Each pad sways from its base.
-  const pads = [[352, 92, 56, 22], [470, 48, 70, 26], [596, 72, 58, 21], [530, 118, 38, 14]];
-  const leafCols = ["#7f93a3", "#9fb3c4", "#c3d3e0", "#8fa596", "#b3c7b9", "#dbe6ee"];
-  let foliage = "";
-  pads.forEach(([cx, cy, rx, ry], p) => {
-    let leaves = "";
-    for (let k = 0; k < 420; k++) {
-      const a = R() * Math.PI * 2, d = Math.sqrt(R());
-      const x = cx + Math.cos(a) * rx * d, y = cy + Math.sin(a) * ry * d * (Math.sin(a) > 0 ? 0.5 : 1);
-      const col = leafCols[Math.min(5, Math.floor((1 - (y - cy + ry) / (2 * ry)) * 4 + R() * 2.2))];
-      leaves += `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="${(2.4 + R() * 2.2).toFixed(1)}" ry="${(1.3 + R()).toFixed(1)}" transform="rotate(${(-25 + R() * 50).toFixed(0)} ${x.toFixed(1)} ${y.toFixed(1)})" fill="${col}" class="lf" style="animation-delay:${(x * 0.005 + R() * 0.3).toFixed(2)}s"/>`;
-    }
-    foliage += `<g class="pad" style="transform-origin:${cx}px ${cy + ry * 0.5}px;animation-delay:${(p * 0.35).toFixed(2)}s">${leaves}</g>`;
-  });
-  // Ghibli wind: thin streaks that draw across, and loose leaves riding them.
-  const streak = (y0, amp, ph) => {
-    let d = "";
-    for (let x = 0; x <= w; x += 20) d += `${x ? "L" : "M"}${x},${(y0 + amp * Math.sin(x / 70 + ph)).toFixed(1)} `;
-    return d;
-  };
-  const streaks = [[38, 7, 0, 0], [134, 9, 1.8, 2.6], [176, 6, 3.2, 5.1], [70, 5, 4.4, 7.4]]
-    .map(([y0, a, ph, dl]) => `<path d="${streak(y0, a, ph)}" class="wd" style="animation-delay:${dl}s"/>`).join("");
-  let flyers = "";
-  for (let k = 0; k < 9; k++) {
-    const y = 40 + R() * 100, x = 360 + R() * 260;
-    flyers += `<ellipse cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" rx="3" ry="1.6" fill="${leafCols[2 + (k % 3)]}" class="fl" style="--dy:${(-30 + R() * 60).toFixed(0)}px;animation-delay:${(k * 1.1).toFixed(1)}s;animation-duration:${(7 + R() * 4).toFixed(1)}s"/>`;
   }
   return frame(w, h, `
-<defs>
-  <radialGradient id="v" cx="50%" cy="55%" r="40%"><stop offset="0" stop-color="${C.bg}" stop-opacity="0.92"/><stop offset="1" stop-color="${C.bg}" stop-opacity="0"/></radialGradient>
-  <linearGradient id="bark" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2a2e34"/><stop offset=".45" stop-color="#6b727c"/><stop offset="1" stop-color="#23272c"/></linearGradient>
-  <linearGradient id="pot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3037"/><stop offset="1" stop-color="#14171b"/></linearGradient>
-</defs>
-<g font-family="${MONO}" font-size="9">${bits}</g>
+<defs><radialGradient id="v" cx="50%" cy="60%" r="60%"><stop offset="0" stop-color="#0d1114"/><stop offset="1" stop-color="${C.bg}"/></radialGradient></defs>
 <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="url(#v)"/>
-<g fill="none" stroke="${C.mid}" stroke-width="1" stroke-linecap="round">${streaks}</g>
-${wood}
-${foliage}
-<path d="M367,172 L543,172 L538,180 L372,180 Z" fill="#3a4049"/>
-<path d="M376,180 L534,180 L520,196 L390,196 Z" fill="url(#pot)" stroke="#2e333a"/>
-${flyers}
-<text x="${w - 22}" y="${h - 14}" text-anchor="end" font-family="${MONO}" font-size="10" letter-spacing="4" fill="${C.mid}">@${esc(login.toUpperCase())}  ·  SINCE ${stats.since}</text>`,
-  `.b { fill: ${C.dim}; opacity: .25; animation: bg 12s steps(1) infinite; }
-@keyframes bg { 0%,96% { opacity: .25; } 97%,99% { opacity: .85; fill: ${C.mid}; } }
-.pad { animation: sway 5s ease-in-out infinite; }
-@keyframes sway { 0%,100% { transform: skewX(0deg) translateX(0); } 40% { transform: skewX(-5deg) translateX(3px); } 55% { transform: skewX(-3deg) translateX(2px); } 75% { transform: skewX(1deg) translateX(-1px); } }
-.lf { animation: gust 5s ease-in-out infinite; }
-@keyframes gust { 0%,30%,60%,100% { opacity: 1; } 42% { opacity: .55; } }
-.wd { stroke-dasharray: 140 1200; stroke-dashoffset: 140; opacity: .5; animation: draw 9s ease-in-out infinite; }
-@keyframes draw { from { stroke-dashoffset: 140; } to { stroke-dashoffset: -1060; } }
-.fl { opacity: 0; animation: fly 8s ease-in-out infinite; }
-@keyframes fly { 0% { opacity: 0; transform: translate(0,0) rotate(0); } 10% { opacity: .9; } 80% { opacity: .7; } 100% { opacity: 0; transform: translate(420px, var(--dy)) rotate(540deg); } }
-.fl { transform-box: fill-box; transform-origin: center; }`);
+<g font-family="${MONO}" font-size="${(cell * 0.92).toFixed(1)}" text-anchor="middle" fill="#d6dbe0">${out}</g>
+<text x="${w - 22}" y="${h - 16}" text-anchor="end" font-family="${MONO}" font-size="10" letter-spacing="4" fill="${C.mid}">@${esc(login.toUpperCase())}  ·  SINCE ${stats.since}</text>`,
+  `.f, .k { transform-box: fill-box; transform-origin: center; animation-name: front; animation-iteration-count: infinite; }
+.k { animation-name: back; transform: scaleY(0); }
+@keyframes front { 0%,38% { transform: scaleY(1); animation-timing-function: cubic-bezier(.7,0,.2,1); } 43%,77% { transform: scaleY(0); } 82%,100% { transform: scaleY(1); } }
+@keyframes back { 0%,43% { transform: scaleY(0); } 48%,72% { transform: scaleY(1); } 77%,100% { transform: scaleY(0); } }`);
 }
 
 // ---- stats: split-flap counters that spin up and land on the real value ----
@@ -189,7 +133,7 @@ function statsCard() {
     ["COMMITS", stats.commits, "LAST 12 MONTHS"],
     ["CONTRIBUTIONS", stats.contributions, "LAST 12 MONTHS"],
     ["PULL REQUESTS", stats.prs, "ALL TIME"],
-    ["STREAK", stats.current, `LONGEST ${stats.longest} DAYS`],
+    ["COMMITS · 24H", stats.day, "LAST 24 HOURS"],
   ];
   const tw = (w - 40 - 3 * 14) / 4;
   let body = "";
