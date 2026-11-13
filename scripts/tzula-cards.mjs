@@ -1,5 +1,6 @@
 // Generates Tzula-styled profile SVGs into ./tzula/. Needs GITHUB_TOKEN and USERNAME.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// OMP token usage comes from tzula/omp-usage.json, which is written on the machine that runs OMP.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const login = process.env.USERNAME || "tommyldev";
@@ -59,6 +60,8 @@ const stats = {
   since: new Date(user.createdAt).getUTCFullYear(),
 };
 
+const omp = existsSync("tzula/omp-usage.json") ? JSON.parse(readFileSync("tzula/omp-usage.json", "utf8")) : null;
+
 // ---- palette (Tzula: near-black, greys, one cold highlight) ----
 const C = { bg: "#0a0b0d", panel: "#101215", line: "#1f2329", dim: "#3a3f47", mid: "#8a9099", hi: "#e8eaed", glow: "#cfe3ff" };
 const SANS = "'Inter','Helvetica Neue',Helvetica,Arial,sans-serif";
@@ -79,19 +82,24 @@ let seed = 7;
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // ---- stats: split-flap counters that spin up and land on the real value ----
-function flap(value, x, y, cw, ch, delay) {
+// Non-digit characters (".", "B") render as static tiles.
+function flap(value, x, y, cw, ch, delay, idp) {
   const digits = String(value).split("");
   let out = "";
   digits.forEach((dch, k) => {
     const cx = x + k * (cw + 6);
-    const target = Number(dch);
+    const box = `<rect x="${cx}" y="${y}" width="${cw}" height="${ch}" rx="5" fill="${C.panel}" stroke="${C.line}"/>`;
+    if (!/\d/.test(dch)) {
+      out += `${box}<text x="${cx + cw / 2}" y="${y + ch * 0.72}" text-anchor="middle">${esc(dch)}</text>`;
+      return;
+    }
     // Strip of 0-9 repeated twice, landing on target in the second cycle.
-    const stop = 10 + target;
+    const stop = 10 + Number(dch);
     let strip = "";
     for (let n = 0; n < 20; n++) strip += `<text x="${cx + cw / 2}" y="${y + ch * (n + 1) - ch * 0.28}" text-anchor="middle">${n % 10}</text>`;
-    const id = `c${x}_${k}`;
+    const id = `${idp}${x}_${k}`;
     out += `<clipPath id="${id}"><rect x="${cx}" y="${y}" width="${cw}" height="${ch}" rx="5"/></clipPath>
-<rect x="${cx}" y="${y}" width="${cw}" height="${ch}" rx="5" fill="${C.panel}" stroke="${C.line}"/>
+${box}
 <g clip-path="url(#${id})"><g class="s" style="--to:${-stop * ch}px;animation-delay:${(delay + k * 0.12).toFixed(2)}s;transform:translateY(${-stop * ch}px)">${strip}</g></g>
 <line x1="${cx}" y1="${y + ch / 2}" x2="${cx + cw}" y2="${y + ch / 2}" stroke="${C.bg}" stroke-width="2"/>
 <rect x="${cx}" y="${y}" width="${cw}" height="${ch / 2}" rx="5" fill="#ffffff" opacity="0.025"/>`;
@@ -99,15 +107,11 @@ function flap(value, x, y, cw, ch, delay) {
   return out;
 }
 
-function statsCard() {
-  const w = 900, h = 200;
-  const tiles = [
-    ["COMMITS", stats.commits, "LAST 12 MONTHS"],
-    ["CONTRIBUTIONS", stats.contributions, "LAST 12 MONTHS"],
-    ["PULL REQUESTS", stats.prs, "ALL TIME"],
-    ["COMMITS · 24H", stats.day, "LAST 24 HOURS"],
-  ];
-  const tw = (w - 40 - 3 * 14) / 4;
+const short = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : String(n));
+
+function tilesCard(tiles, idp) {
+  const w = 900, h = 200, n = tiles.length;
+  const tw = (w - 40 - (n - 1) * 14) / n;
   let body = "";
   tiles.forEach(([label, value, sub], t) => {
     const x = 20 + t * (tw + 14);
@@ -116,7 +120,7 @@ function statsCard() {
     body += `<rect x="${x}" y="20" width="${tw}" height="${h - 40}" rx="10" fill="${C.panel}" fill-opacity="0.55" stroke="${C.line}"/>
 <text x="${x + 16}" y="48" font-family="${MONO}" font-size="11" letter-spacing="3" fill="${C.mid}">${label}</text>
 <circle cx="${x + tw - 18}" cy="44" r="3" fill="${C.glow}" class="p" style="animation-delay:${t * 0.4}s"/>
-${flap(value, x + 16, 72, cw, ch, 0.2 + t * 0.25)}
+${flap(value, x + 16, 72, cw, ch, 0.2 + t * 0.25, idp)}
 <text x="${x + 16}" y="${h - 40}" font-family="${MONO}" font-size="10" letter-spacing="2" fill="${C.dim}">${esc(sub)}</text>`;
   });
   return frame(w, h, `<g font-family="${MONO}" font-weight="600" fill="${C.hi}" font-size="30">${body}</g>`,
@@ -126,6 +130,18 @@ ${flap(value, x + 16, 72, cw, ch, 0.2 + t * 0.25)}
 @keyframes pulse { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
 text { font-variant-numeric: tabular-nums; }`);
 }
+
+const statsCard = () => tilesCard([
+  ["COMMITS", stats.commits, "LAST 12 MONTHS"],
+  ["CONTRIBUTIONS", stats.contributions, "LAST 12 MONTHS"],
+  ["PULL REQUESTS", stats.prs, "ALL TIME"],
+  ["COMMITS · 24H", stats.day, "LAST 24 HOURS"],
+], "c");
+
+const tokenCard = () => tilesCard([
+  ["OMP TOKENS · 24H", short(omp.day.total), `LAST 24 HOURS · ${short(omp.day.fresh)} FRESH`],
+  ["OMP TOKENS · 30D", short(omp.month.total), `LAST 30 DAYS · ${short(omp.month.fresh)} FRESH`],
+], "t");
 
 // ---- contributions: the usual calendar grid, one square per day ----
 function gridCard() {
@@ -176,7 +192,7 @@ function combined(parts) {
 <rect x="0.5" y="0.5" width="${W - 1}" height="${y - 1}" rx="14" fill="none" stroke="${C.line}"/>
 </svg>`;
 }
-writeFileSync("tzula/profile.svg", combined([statsCard(), gridCard()]));
+writeFileSync("tzula/profile.svg", combined(omp ? [statsCard(), tokenCard(), gridCard()] : [statsCard(), gridCard()]));
 // Browsers cache the profile images by URL, so stamp each one with a content hash.
 let readme = readFileSync("README.md", "utf8");
 for (const f of ["profile"]) {
